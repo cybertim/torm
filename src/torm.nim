@@ -20,7 +20,7 @@ proc Trow[T: Tmodel](this: T, row: seq[string]): T =
     var i = 1
     for col in this.Tfields:
         if col.name != "Tfields" and col.name != "Tname" and col.name != "id":
-            json &= ", \"" & col.name & "\": " & (if col.kind == "string" : escapeJson row[i] else: escapeJsonUnquoted row[i])
+            json &= ", \"" & col.name & "\": " & (if col.kind == "string": escapeJson row[i] else: escapeJsonUnquoted row[i])
             i += 1
     result = to(parseJson(json & "}"), T)
     result.Tinit(false)
@@ -67,7 +67,7 @@ proc newTorm*[T: Tmodel](dbName: string, models: varargs[T]): Torm =
                 statement &= "\"" & column.name & "\" " & orm.columnInfo(column)
             statement &= ");"
             db.exec(sql(statement))
-        
+
     return orm
 
 proc insert[T: Tmodel](this: Torm, model: T): int64 {.discardable.} =
@@ -91,7 +91,7 @@ proc update[T: Tmodel](this: Torm, model: T): bool {.discardable.} =
     for col, value in model[].fieldPairs:
         if col != "Tfields" and col != "Tname" and col != "id":
             if statement[^1] != ' ': statement &= ", "
-            statement &= col & " = ?" 
+            statement &= col & " = ?"
             list.add($value)
     list.add($model.id)
     statement &= " WHERE id = ?"
@@ -110,7 +110,7 @@ proc find[T: Tmodel](this: Torm, model: T, where = (clause: "", values: @[""]), 
     if not countOnly:
         if limit > 0: select &= " LIMIT " & $limit
         if offset > 0: select &= " OFFSET " & $offset
-    
+
     for x in this.db.fastRows(sql select, where.values):
         if not countOnly:
             result.objects.add T().Tinit().Trow(x)
@@ -143,68 +143,3 @@ proc delete*[T: Tmodel](this: Torm, model: T) =
     var statement = "DELETE FROM \"" & model.Tname & "\" WHERE id = ?"
     if model.id != -1:
         this.db.exec(sql statement, @[model.id])
-
-
-# Use object Tmodel to create your own ref objects
-type
-    User = ref object of Tmodel
-        name: string
-        lastname: string
-        age: int
-        blocked: bool
-    
-    Log = ref object of Tmodel
-        message: string
-        userId: int64
-
-# Create and / or update the tables during the creation of the Torm object
-let orm = newTorm("example.db", @[User().Tinit, Log().Tinit])
-
-# don't forget .Tinit, it's called to construct some internal data for the ORM
-let foo = User().Tinit
-foo.name = "Joe"
-foo.lastname = "Unknown"
-foo.age = 18
-
-# Simply persist a Tmodel using .save
-orm.save foo
-echo foo.id # foo now has an id
-
-for i in countup(18,38):
-
-    # Add some more users
-    let user = User().Tinit
-    user.name = "Joe" & $i
-    user.age = i
-    orm.save user
-
-    # Give each user a Log
-    let log = Log().Tinit
-    log.message = "message " & $i
-    log.userId = user.id
-    orm.save log
-
-# See how many Log columns there are available
-echo orm.count Log().Tinit
-
-# Get 5 users of age above 30
-let users = orm.findMany(User().Tinit, where = (clause: "age > ?", values: @[$30]), limit = 5)
-
-for user in users:
-    # Get associated Log
-    let logs = orm.findMany(Log().Tinit, where = (clause: "userId = ?", values: @[$user.id]))
-    if logs.len > 0:
-        echo user.name & " has a message: " & logs[0].message
-
-# If you already know the id use .findOne
-let user = orm.findOne(User().Tinit, 1)
-echo user.name # Our first Joe
-
-# You can alter found objects and save them again to update the database
-user.lastname = "Changed"
-orm.save user
-
-# You can also use where in countBy and order + offset in findMany eg.
-let limitedAndOrderedLogs = orm.findMany(Log().Tinit, order = (by: "id", way: Torder.Desc), limit = 5, offset = 1)
-echo orm.countBy(User().Tinit, "age > ?", @[$20])
-
